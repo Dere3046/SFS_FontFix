@@ -3,7 +3,12 @@
 BepInEx 插件，替换游戏默认字体解决中文显示 `口` 的问题。
 
 ## 声明
-这完全不是我的技术栈
+
+- **技术栈说明**：本部分内容/相关操作并非本人主要技术领域，可能存在不完善之处。
+- **BepInEx 集成与许可**：
+    - 本项目已包含 BepInEx 的发布文件。     
+    - 文件来源：[BepInEx v5.4.23.5](https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.5)
+    - BepInEx 采用 **LGPL-2.1** 许可证，详情请参见：[BepInEx/LICENSE](https://github.com/BepInEx/BepInEx/blob/master/LICENSE)
 
 ## 原理
 
