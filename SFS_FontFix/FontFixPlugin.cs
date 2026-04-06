@@ -12,7 +12,7 @@ using UnityEngine.TextCore.LowLevel;
 
 namespace SFS_FontFix
 {
-    [BepInPlugin("com.sfs.fontfix", "SFS Font Fix", "4.1.0")]
+    [BepInPlugin("com.sfs.fontfix", "SFS Font Fix", "5.1.0")]
     public class FontFixPlugin : BaseUnityPlugin
     {
         public static FontFixPlugin Instance;
@@ -27,7 +27,7 @@ namespace SFS_FontFix
         private void Awake()
         {
             Instance = this;
-            Logger.LogInfo("SFS Font Fix v4.1.0 loaded");
+            Logger.LogInfo("SFS Font Fix v5.1.0 loaded");
             new Harmony("com.sfs.fontfix").PatchAll();
         }
 
@@ -37,32 +37,46 @@ namespace SFS_FontFix
                 LoadAndReplaceFont();
 
             if (isInitialized && chineseTMPFont != null)
-                ApplyTMPFontIfNeeded();
+                ApplyTMPFontEveryFrame();
+        }
+
+        private void ApplyTMPFontEveryFrame()
+        {
+            foreach (var tmp in FindObjectsOfType<TMP_Text>())
+            {
+                if (tmp == null) continue;
+                if (tmp.font != chineseTMPFont)
+                {
+                    tmp.font = chineseTMPFont;
+                    tmp.SetAllDirty();
+                    tmp.ForceMeshUpdate();
+                }
+                if (tmp.text != null && tmp.text.Contains("："))
+                {
+                    tmp.text = tmp.text.Replace('：', ':');
+                    tmp.SetAllDirty();
+                    tmp.ForceMeshUpdate();
+                }
+            }
         }
 
         private void LoadAndReplaceFont()
         {
             if (isInitialized) return;
-
             var manager = SFS.Translations.TranslationManager.main;
             if (manager?.fonts == null || manager.fonts.Count == 0) return;
 
             string fontPath = FindFontFile();
-            if (fontPath == null)
-            {
-                Logger.LogWarning("Font not found. Place .ttf/.otf in BepInEx/plugins/");
-                return;
-            }
+            if (fontPath == null) return;
 
             chineseUnityFont = new Font(fontPath);
             chineseFontFilePath = fontPath;
-            Logger.LogInfo("Font loaded: " + chineseUnityFont.name);
 
             CreateTMPFont();
             ReplaceNormalFont(manager);
+            ApplyTMPFontEveryFrame();
 
             isInitialized = true;
-            Logger.LogInfo("Font replacement complete");
         }
 
         private string FindFontFile()
@@ -79,27 +93,16 @@ namespace SFS_FontFix
         private void CreateTMPFont()
         {
             if (chineseUnityFont == null) return;
-
             try
             {
                 chineseTMPFont = TMP_FontAsset.CreateFontAsset(
                     chineseUnityFont, 90, 9, GlyphRenderMode.SDFAA, 4096, 4096,
                     AtlasPopulationMode.Dynamic, true);
-
-                if (chineseTMPFont == null)
-                {
-                    Logger.LogError("CreateFontAsset returned null");
-                    return;
-                }
-
+                if (chineseTMPFont == null) return;
                 chineseTMPFont.name = "NotoSansSC SDF";
                 chineseTMPFont.fallbackFontAssetTable = new List<TMP_FontAsset>();
-                Logger.LogInfo("TMP font asset created");
             }
-            catch (Exception e)
-            {
-                Logger.LogError("Failed to create TMP font: " + e);
-            }
+            catch (Exception e) { Logger.LogError("Failed to create TMP font: " + e); }
         }
 
         private void ReplaceNormalFont(SFS.Translations.TranslationManager manager)
@@ -113,28 +116,13 @@ namespace SFS_FontFix
                     fonts[i] = chineseUnityFont;
                     if (manager.currentFont == originalNormalFont)
                         manager.currentFont = chineseUnityFont;
-                    Logger.LogInfo("Replaced normal font at index " + i);
                     return;
                 }
             }
-
             if (fonts.Count > 0 && fonts[0] != null)
             {
                 originalNormalFont = fonts[0];
                 fonts[0] = chineseUnityFont;
-                Logger.LogInfo("Replaced first font as fallback");
-            }
-        }
-
-        private void ApplyTMPFontIfNeeded()
-        {
-            foreach (var tmp in FindObjectsOfType<TMP_Text>())
-            {
-                if (tmp.font != chineseTMPFont)
-                {
-                    tmp.font = chineseTMPFont;
-                    tmp.enableAutoSizing = true;
-                }
             }
         }
 
@@ -143,7 +131,7 @@ namespace SFS_FontFix
             if (!isInitialized) return;
             var manager = SFS.Translations.TranslationManager.main;
             if (manager != null) ReplaceNormalFont(manager);
-            ApplyTMPFontIfNeeded();
+            ApplyTMPFontEveryFrame();
         }
 
         public static FontFixPlugin GetInstance() => Instance;
@@ -170,13 +158,69 @@ namespace SFS_FontFix
         static void Postfix(Font font, SFS.Translations.FontSetter __instance)
         {
             if (!FontFixPlugin.IsReady()) return;
-
             var tmp = __instance.GetComponentInChildren<TMPro.TextMeshProUGUI>();
-            if (tmp != null)
+            if (tmp != null && tmp.font != FontFixPlugin.GetChineseTMPFont())
             {
                 tmp.font = FontFixPlugin.GetChineseTMPFont();
-                tmp.enableAutoSizing = true;
+                tmp.SetAllDirty();
+                tmp.ForceMeshUpdate();
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(SFS.World.FlightInfoDrawer), "Update")]
+    public class FlightInfoDrawer_Update_Patch
+    {
+        [HarmonyPrefix]
+        static bool Prefix(SFS.World.FlightInfoDrawer __instance)
+        {
+            if (!FontFixPlugin.IsReady()) return true;
+            var chineseFont = FontFixPlugin.GetChineseTMPFont();
+            if (chineseFont == null) return true;
+
+            try
+            {
+                if (SFS.World.PlayerController.main.player.Value is SFS.World.Rocket rocket)
+                {
+                    __instance.menuHolder.SetActive(true);
+                    float mass = rocket.rb2d.mass;
+                    float thrust = rocket.partHolder.GetModules<SFS.Parts.Modules.EngineModule>()
+                        .Sum((SFS.Parts.Modules.EngineModule a) => a.thrust.Value * a.throttle_Out.Value);
+
+                    __instance.massText.Text = mass.ToString("0.00") + " t";
+                    __instance.thrustText.Text = thrust.ToString("0.0") + " kN";
+                    __instance.thrustToWeightText.Text = (mass > 0 ? (thrust / mass).ToString("0.00") : "0.00");
+                    __instance.partCountText.Text = rocket.partHolder.parts.Count.ToString();
+                }
+                else
+                {
+                    __instance.massText.Text = "0.00 t";
+                    __instance.thrustText.Text = "0.0 kN";
+                    __instance.thrustToWeightText.Text = "0.00";
+                    __instance.partCountText.Text = "0";
+                }
+                __instance.timewarpText.Text = SFS.World.WorldTime.main.timewarpSpeed + "x";
+            }
+            catch { }
+
+            ForceRefresh(__instance.timewarpText, chineseFont);
+            ForceRefresh(__instance.massText, chineseFont);
+            ForceRefresh(__instance.thrustText, chineseFont);
+            ForceRefresh(__instance.thrustToWeightText, chineseFont);
+            ForceRefresh(__instance.partCountText, chineseFont);
+            return false;
+        }
+
+        static void ForceRefresh(SFS.UI.TextAdapter adapter, TMP_FontAsset font)
+        {
+            if (adapter == null) return;
+            var tmp = adapter.GetComponent<TMPro.TextMeshProUGUI>();
+            if (tmp == null) return;
+            if (tmp.font != font) tmp.font = font;
+            if (tmp.text != null && tmp.text.Contains("："))
+                tmp.text = tmp.text.Replace('：', ':');
+            tmp.SetAllDirty();
+            tmp.ForceMeshUpdate();
         }
     }
 }
