@@ -1,5 +1,9 @@
 # SFS 字体修复 MOD
 
+> **提醒**：该项目应迁移到 [SFS_HAN 仓库][new-repo]。
+>
+> [new-repo]: https://github.com/Dere3046/SFS_HAN
+
 BepInEx 插件，替换游戏默认字体解决中文显示 `口` 的问题。
 
 ## 声明
